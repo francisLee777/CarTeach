@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>倒车模拟器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>倒车模拟练习</h1>
+    <div class="container">
+        <canvas id="parking-lot" width="800" height="600"></canvas>
+        <div class="controls">
+            <h2>控制面板</h2>
+            <button id="draw-walls-btn">自定义墙面</button>
+            <button id="draw-rect-btn">绘制矩形墙</button>
+            <button id="undo-wall-btn">撤销</button>
+            <button id="redo-wall-btn">重做</button>
+            <button id="finish-drawing-btn">完成绘制</button>
+            <div class="speed-control">
+                <label for="speed-slider">车速调节:</label>
+                <input type="range" id="speed-slider" min="1" max="5" value="1">
+            </div>
+            <button id="random-walls-btn">随机生成墙面</button>
+            <button id="set-car-btn">自定义汽车位置</button>
+            <button id="restart-btn">重新开始</button>
+            <div class="save-load-controls">
+                <h3>存档/读档</h3>
+                <div class="slots">
+                    <button class="save-btn" data-slot="1">存档 1</button>
+                    <button class="load-btn" data-slot="1">读档 1</button>
+                </div>
+                <div class="slots">
+                    <button class="save-btn" data-slot="2">存档 2</button>
+                    <button class="load-btn" data-slot="2">读档 2</button>
+                </div>
+                <div class="slots">
+                    <button class="save-btn" data-slot="3">存档 3</button>
+                    <button class="load-btn" data-slot="3">读档 3</button>
+                </div>
+            </div>
+            <div id="message-box"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
