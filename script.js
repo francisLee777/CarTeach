@@ -174,10 +174,8 @@ function update(deltaTime) { // 接收deltaTime
         ctx.moveTo(startPoint.x, startPoint.y);
         ctx.lineTo(currentMousePos.x, currentMousePos.y);
         ctx.stroke();
-    }
-
+    }else if(drawingRect && startPoint && currentMousePos) {
     // 新增：绘制预览矩形
-    if (drawingRect && startPoint && currentMousePos) {
         ctx.strokeStyle = 'lightgray';
         ctx.lineWidth = 2;
         ctx.strokeRect(startPoint.x, startPoint.y, currentMousePos.x - startPoint.x, currentMousePos.y - startPoint.y);
@@ -341,6 +339,7 @@ function isPointInCar(px, py) {
 
 function handleCanvasClick(e) {
     console.log("Canvas clicked at:", e.offsetX, e.offsetY," car  的",car.x,car.y);
+    // 画直线
     if (drawing) {
         if (!startPoint) {
             startPoint = { x: e.offsetX, y: e.offsetY };
@@ -351,7 +350,8 @@ function handleCanvasClick(e) {
             redoHistory = []; // 清空重做历史
             startPoint = null;
         }
-    } else if (drawingRect) { // 新增：处理矩形绘制
+        // 画矩形
+    } else if (drawingRect) { 
         if (!startPoint) {
             startPoint = { x: e.offsetX, y: e.offsetY };
         } else {
