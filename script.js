@@ -4,14 +4,17 @@ const messageBox = document.getElementById('message-box');
 
 const carWidth = 50;
 const carHeight = 100;
+const  previewCanvasRate = 0.25; // 存档预览画布的比例
+
 // 汽车初始属性设置
 let car = {
-    // Y坐标现在是车的中心
-    // 这里位置没有用，后面 restrat 会修改
+    // 这里位置没有用，后面 restart 会修改
     x: 0,
-    y: 0, // Y坐标现在是车的中心
-    angle: 0, // 面向上方    steerAngle: 0, // 前轮转向角度
+    y: 0,
+    angle: Math.PI, // 车头朝下
     speed: 0,
+
+    // restart 不会修改
     acceleration: 2, // (像素/秒²)
     friction: 1,     // (像素/秒²)
     turnSpeed: 0.05, // 转向速度
@@ -19,14 +22,17 @@ let car = {
     wheelbase: carHeight * 0.8 // 轴距
 };
 
-let maxSpeed = 30; // (像素/秒) - 最大速度 [可根据控制面板中的速度控制来调整]
+const baseMaxSpeed = 30; // 定义一个基础最大速度
+let maxSpeed = baseMaxSpeed; // (像素/秒) - 最大速度 [可根据控制面板中的速度控制来调整]
+
 
 let walls = [];
 let wallHistory = []; // 新增：墙面历史记录，用于撤销
 let redoHistory = []; // 新增：重做历史记录
 let drawing = false;
-let drawingRect = false; // 新增：绘制矩形模式
+let drawingRect = false;
 let startPoint = null;
+let wheelTracks = { fl: [], fr: [], rl: [], rr: [] }; // 新增：用于存储车轮轨迹
 
 const keys = {
     ArrowUp: false,
@@ -43,7 +49,7 @@ function drawCar() {
     ctx.fillRect(-carWidth / 2, -carHeight / 2, carWidth, carHeight);
     // 绘制车头、车尾和后视镜
     // 车头灯
-    ctx.fillStyle = 'green'; // 将车灯颜色改为绿色
+    ctx.fillStyle = 'yellow'; // 将车灯颜色改为绿色
     ctx.fillRect(-carWidth / 2 + 5, -carHeight / 2 - 2, 10, 4);
     ctx.fillRect(carWidth / 2 - 15, -carHeight / 2 - 2, 10, 4);
 
@@ -58,13 +64,39 @@ function drawCar() {
     ctx.fillRect(carWidth / 2, -carHeight / 2 + 20, 6, 15);
 
     // 绘制前轮 (为了可视化转向)
+    const wheelWidth = carWidth / 2 - 10;
+    const wheelHeight = 20;
+    const frontAxleY = -car.wheelbase / 2;
+    const backAxleY = car.wheelbase / 2;
+    const leftWheelX = -carWidth / 2;
+    const rightWheelX = 10;
+    ctx.fillStyle = 'black';
+
+    // 左前轮
     ctx.save();
-    ctx.translate(0, -car.wheelbase / 2); // 移动到前轴中心
-    ctx.rotate(car.steerAngle); // 根据转向角度旋转
-    ctx.fillStyle = 'darkgray';
-    ctx.fillRect(-carWidth / 2 - 2, -10, carWidth / 2 - 8, 20); // 左前轮
-    ctx.fillRect(10, -10, carWidth / 2 - 8, 20); // 右前轮
+    // 1. 移动到左前轮的旋转中心点
+    ctx.translate(leftWheelX + wheelWidth / 2, frontAxleY + wheelHeight / 2);
+    // 2. 旋转
+    ctx.rotate(car.steerAngle);
+    // 3. 以旋转中心为原点绘制轮胎
+    ctx.fillRect(-wheelWidth / 2, -wheelHeight / 2, wheelWidth, wheelHeight);
     ctx.restore();
+
+    // 右前轮
+    ctx.save();
+    // 1. 移动到右前轮的旋转中心点
+    ctx.translate(rightWheelX + wheelWidth / 2, frontAxleY + wheelHeight / 2);
+    // 2. 旋转
+    ctx.rotate(car.steerAngle);
+    // 3. 以旋转中心为原点绘制轮胎
+    ctx.fillRect(-wheelWidth / 2, -wheelHeight / 2, wheelWidth, wheelHeight);
+    ctx.restore();
+
+    // 汽车的后轮不会转向，因此直接绘制
+    const rearAxleY = car.wheelbase / 2;
+    ctx.fillRect(leftWheelX, rearAxleY - wheelHeight / 2, wheelWidth, wheelHeight);
+    ctx.fillRect(rightWheelX, rearAxleY - wheelHeight / 2, wheelWidth, wheelHeight);
+
 
     // 绘制车头车尾文字
     ctx.fillStyle = 'white';
@@ -162,6 +194,16 @@ function update(deltaTime) { // 接收deltaTime
         car.x = newRearAxleX + rearAxleOffset * Math.sin(newAngle);
         car.y = newRearAxleY - rearAxleOffset * Math.cos(newAngle);
         car.angle = newAngle;
+
+        // 新增：记录车轮轨迹
+        if (document.getElementById('record-tracks-checkbox').checked) {
+            const wheelPositions = getWheelPositions();
+            wheelTracks.fl.push(wheelPositions.fl);
+            wheelTracks.fr.push(wheelPositions.fr);
+            wheelTracks.rl.push(wheelPositions.rl);
+            wheelTracks.rr.push(wheelPositions.rr);
+        }
+
     }
 
     clearCanvas();
@@ -181,6 +223,7 @@ function update(deltaTime) { // 接收deltaTime
         ctx.strokeRect(startPoint.x, startPoint.y, currentMousePos.x - startPoint.x, currentMousePos.y - startPoint.y);
     }
 
+    drawWheelTracks(); // 新增：绘制轨迹
     drawWalls();
     drawCar();
 
@@ -206,8 +249,26 @@ function update(deltaTime) { // 接收deltaTime
     }
 }
 
-function moveCar(e) {
-    // 这个函数现在只用于启动和停止，实际移动在update中处理
+// 新增：绘制车轮轨迹
+function drawWheelTracks() {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)'; // 浅灰色虚线
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 10]); // 5像素实线，10像素空白
+
+    for (const wheelKey in wheelTracks) {
+        const track = wheelTracks[wheelKey];
+        if (track.length < 2) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(track[0].x, track[0].y);
+        for (let i = 1; i < track.length; i++) {
+            ctx.lineTo(track[i].x, track[i].y);
+        }
+        ctx.stroke();
+    }
+
+    ctx.restore(); // 恢复绘图状态，不影响后续绘制
 }
 
 function getCarCorners() {
@@ -237,6 +298,37 @@ function getCarCorners() {
     });
 
     return corners;
+}
+
+// 新增：获取四个车轮中心在世界坐标系中的位置
+function getWheelPositions() {
+    const wheelWidth = carWidth / 2 - 10;
+    const frontAxleY = -car.wheelbase / 2;
+    const rearAxleY = car.wheelbase / 2;
+    const leftWheelX = -carWidth / 2;
+    const rightWheelX = 10;
+
+    // 车轮中心点相对于车辆中心的局部坐标
+    const localPositions = {
+        fl: { x: leftWheelX + wheelWidth / 2, y: frontAxleY },
+        fr: { x: rightWheelX + wheelWidth / 2, y: frontAxleY },
+        rl: { x: leftWheelX + wheelWidth / 2, y: rearAxleY },
+        rr: { x: rightWheelX + wheelWidth / 2, y: rearAxleY }
+    };
+
+    // 将局部坐标转换为世界坐标的辅助函数
+    const toWorld = (localPoint) => {
+        const rotatedX = localPoint.x * Math.cos(car.angle) - localPoint.y * Math.sin(car.angle);
+        const rotatedY = localPoint.x * Math.sin(car.angle) + localPoint.y * Math.cos(car.angle);
+        return { x: rotatedX + car.x, y: rotatedY + car.y };
+    };
+
+    return {
+        fl: toWorld(localPositions.fl),
+        fr: toWorld(localPositions.fr),
+        rl: toWorld(localPositions.rl),
+        rr: toWorld(localPositions.rr)
+    };
 }
 
 function lineLineIntersection(p1, p2, p3, p4) {
@@ -278,12 +370,14 @@ function checkCollision() {
 function restart() {
     car.x = canvas.width / 2;
     car.y = canvas.height/2; // Y坐标现在是车的中心
-    car.angle = Math.PI; // 面向上方
+    car.angle = Math.PI; // 车头朝下
     car.speed = 0;
     car.steerAngle = 0; // 重置转向角
     walls = [];
     wallHistory = [];
     redoHistory = [];
+    wheelTracks = { fl: [], fr: [], rl: [], rr: [] }; // 新增：清除轨迹
+    document.getElementById('record-tracks-checkbox').checked = false; // 新增：取消勾选复选框
 }
 
 function randomWalls() {
@@ -430,9 +524,12 @@ document.getElementById('redo-wall-btn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('speed-slider').addEventListener('input', (e) => {
-    // 滑块范围1-5
-    maxSpeed = parseFloat(e.target.value) * maxSpeed;
+document.getElementById('speed-multiplier-input').addEventListener('input', (e) => {
+    const multiplier = parseFloat(e.target.value);
+    // 验证输入值在1到10之间
+    if (!isNaN(multiplier) && multiplier >= 1 && multiplier <= 10) {
+        maxSpeed = baseMaxSpeed * multiplier;
+    }
 });
 
 document.getElementById('random-walls-btn').addEventListener('click', randomWalls);
@@ -455,10 +552,35 @@ canvas.addEventListener('click', handleCanvasClick);
 window.addEventListener('keydown', (e) => {
     if (e.key in keys) {
         // 阻止上下箭头键的默认滚动行为
-        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             e.preventDefault();
         }
         keys[e.key] = true;
+    }
+});
+
+document.getElementById('record-tracks-checkbox').addEventListener('change', (e) => {
+    if (!e.target.checked) {
+        // 当取消勾选时，清除轨迹
+        wheelTracks = { fl: [], fr: [], rl: [], rr: [] };
+        messageBox.textContent = '车轮轨迹已清除。';
+        messageBox.style.borderColor = 'blue';
+        setTimeout(() => {
+            if (messageBox.textContent === '车轮轨迹已清除。') {
+                messageBox.textContent = '';
+                messageBox.style.borderColor = 'transparent';
+            }
+        }, 2000);
+    } else {
+        // 当勾选时，给一个提示
+        messageBox.textContent = '开始记录车轮轨迹。';
+        messageBox.style.borderColor = 'blue';
+        setTimeout(() => {
+            if (messageBox.textContent === '开始记录车轮轨迹。') {
+                messageBox.textContent = '';
+                messageBox.style.borderColor = 'transparent';
+            }
+        }, 2000);
     }
 });
 
@@ -492,6 +614,7 @@ function saveState(slot, force = false) {
     localStorage.setItem(`parking_lot_save_${slot}`, JSON.stringify(gameState));
     messageBox.textContent = `游戏状态已保存到存档 ${slot}。`;
     messageBox.style.borderColor = 'green';
+    updateSaveButtonStates(); // 保存后更新按钮状态
 }
 
 function loadState(slot) {
@@ -508,6 +631,23 @@ function loadState(slot) {
         messageBox.textContent = `存档 ${slot} 为空。`;
         messageBox.style.borderColor = 'orange';
     }
+}
+
+// --- 新增：更新存档按钮状态的函数 ---
+function updateSaveButtonStates() {
+    document.querySelectorAll('.save-btn').forEach(button => {
+        const slot = button.dataset.slot;
+        const saveData = localStorage.getItem(`parking_lot_save_${slot}`);
+        const originalText = `存档 ${slot}`;
+
+        if (saveData) {
+            button.classList.add('has-save');
+            button.textContent = `${originalText} [已有存档]`;
+        } else {
+            button.classList.remove('has-save');
+            button.textContent = originalText;
+        }
+    });
 }
 
 document.querySelectorAll('.save-btn').forEach(button => {
@@ -531,25 +671,23 @@ document.querySelectorAll('.load-btn').forEach(button => {
 
         const previewContainer = document.getElementById('preview-container');
         const previewCanvas = document.createElement('canvas');
-        previewCanvas.width = 200; // 预览图宽度
-        previewCanvas.height = 200; // 预览图高度
+        previewCanvas.width = previewCanvasRate * canvas.width; // 预览图宽度
+        previewCanvas.height = previewCanvasRate * canvas.height; // 预览图高度
         const previewCtx = previewCanvas.getContext('2d');
 
         // 清除预览容器
         previewContainer.innerHTML = '';
         previewContainer.appendChild(previewCanvas);
 
-        // 缩放比例（原画布800x800，预览200x200）
-        const scale = 0.25;
-        previewCtx.scale(scale, scale);
+        previewCtx.scale(previewCanvasRate, previewCanvasRate);
 
-        // 绘制保存的游戏状态
+        // 悬浮预览存档中的游戏状态
         const gameState = JSON.parse(savedState);
-        drawPreviewState(previewCtx, gameState, scale);
+        drawPreviewState(previewCtx, gameState, previewCanvasRate);
 
         // 定位预览容器
         const rect = e.target.getBoundingClientRect();
-        previewContainer.style.left = `${rect.right + 10}px`;
+        previewContainer.style.left = `${rect.right - previewCanvas.width -  rect.width -10}px`;
         previewContainer.style.top = `${rect.top}px`;
         previewContainer.style.display = 'block';
     });
@@ -589,5 +727,6 @@ function drawPreviewState(ctx, gameState, scale) {
 
 // 初始化并读取存档1
 restart();
-loadState(1); 
+loadState(1);
+updateSaveButtonStates(); // 页面加载时初始化按钮状态
 gameLoop(0); // 启动游戏循环
