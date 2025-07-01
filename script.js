@@ -6,19 +6,20 @@ const carWidth = 50;
 const carHeight = 100;
 // 汽车初始属性设置
 let car = {
-    x: canvas.width / 2 - carWidth / 2,
-    y: canvas.height - carHeight - 10, // 将初始Y坐标设置在画布底部
-    angle: Math.PI, // 车身角度
-    steerAngle: 0, // 前轮转向角度
+    // Y坐标现在是车的中心
+    // 这里位置没有用，后面 restrat 会修改
+    x: 0,
+    y: 0, // Y坐标现在是车的中心
+    angle: 0, // 面向上方    steerAngle: 0, // 前轮转向角度
     speed: 0,
-    acceleration: 1, // (像素/秒²)
-    friction: 0.5,     // (像素/秒²)
+    acceleration: 2, // (像素/秒²)
+    friction: 1,     // (像素/秒²)
     turnSpeed: 0.05, // 转向速度
     maxSteerAngle: 0.6, // 最大转向角，根据3.5倍车长转弯直径计算
     wheelbase: carHeight * 0.8 // 轴距
 };
 
-let maxSpeed = 20; // (像素/秒) - 最大速度 [可根据控制面板中的速度控制来调整]
+let maxSpeed = 30; // (像素/秒) - 最大速度 [可根据控制面板中的速度控制来调整]
 
 let walls = [];
 let wallHistory = []; // 新增：墙面历史记录，用于撤销
@@ -35,13 +36,8 @@ const keys = {
 };
 
 function drawCar() {
-    // (car.x, car.y) is now the center of the rear axle.
-    // We need to find the geometric center for rotation.
-    const centerX = car.x + (car.wheelbase / 2) * Math.sin(car.angle);
-    const centerY = car.y - (car.wheelbase / 2) * Math.cos(car.angle);
-
     ctx.save();
-    ctx.translate(centerX, centerY); // Translate to the geometric center
+    ctx.translate(car.x, car.y); // Translate to the geometric center
     ctx.rotate(car.angle);
     ctx.fillStyle = 'blue';
     ctx.fillRect(-carWidth / 2, -carHeight / 2, carWidth, carHeight);
@@ -148,14 +144,24 @@ function update(deltaTime) { // 接收deltaTime
 
     // 4. 更新车辆位置和角度 (基于自行车模型)
     if (car.speed !== 0) {
+        // The speed is applied at the rear axle.
+        // We need to calculate the position of the rear axle based on the car's center (car.x, car.y) and angle.
+        const rearAxleOffset = car.wheelbase / 2;
+        const rearAxleX = car.x - rearAxleOffset * Math.sin(car.angle);
+        const rearAxleY = car.y + rearAxleOffset * Math.cos(car.angle);
+
+        // Now, update the rear axle's position based on speed and current angle.
         const distance = car.speed * deltaTime;
+        const newRearAxleX = rearAxleX + distance * Math.sin(car.angle);
+        const newRearAxleY = rearAxleY - distance * Math.cos(car.angle);
 
-        // 1. 先根据当前角度移动车辆
-        car.x += distance * Math.sin(car.angle);
-        car.y -= distance * Math.cos(car.angle);
+        // Update the car's main angle based on the turn.
+        const newAngle = car.angle + (car.speed / car.wheelbase) * Math.tan(car.steerAngle) * deltaTime;
 
-        // 2. 再根据转向更新角度，为下一帧做准备
-        car.angle += (car.speed / car.wheelbase) * Math.tan(car.steerAngle) * deltaTime;
+        // Finally, calculate the new geometric center based on the new rear axle position and new angle.
+        car.x = newRearAxleX + rearAxleOffset * Math.sin(newAngle);
+        car.y = newRearAxleY - rearAxleOffset * Math.cos(newAngle);
+        car.angle = newAngle;
     }
 
     clearCanvas();
@@ -195,7 +201,7 @@ function update(deltaTime) { // 接收deltaTime
         messageBox.style.borderColor = 'red';
         // 停止汽车移动
         car.speed = 0;
-        car.turnSpeed = 0;
+        // car.turnSpeed = 0;
     } else {
         messageBox.textContent = '';
         messageBox.style.borderColor = 'transparent';
@@ -208,10 +214,7 @@ function moveCar(e) {
 
 function getCarCorners() {
     const corners = [];
-    // (car.x, car.y) is the rear axle. Find the geometric center.
-    const centerX = car.x + (car.wheelbase / 2) * Math.sin(car.angle);
-    const centerY = car.y - (car.wheelbase / 2) * Math.cos(car.angle);
-
+    // (car.x, car.y) is the geometric center.
     const halfWidth = carWidth / 2;
     const halfHeight = carHeight / 2;
 
@@ -230,8 +233,8 @@ function getCarCorners() {
 
         // 平移到汽车的实际位置
         corners.push({
-            x: rotatedX + centerX,
-            y: rotatedY + centerY
+            x: rotatedX + car.x,
+            y: rotatedY + car.y
         });
     });
 
@@ -275,15 +278,14 @@ function checkCollision() {
 }
 
 function restart() {
-    car.x = canvas.width / 2; // 后轴中心X
-    car.y = canvas.height - 100; // 后轴中心Y
-    car.angle = Math.PI; // 确保重置时角度为180度（车头向下）
+    car.x = canvas.width / 2;
+    car.y = canvas.height/2; // Y坐标现在是车的中心
+    car.angle = Math.PI; // 面向上方
     car.speed = 0;
     car.steerAngle = 0; // 重置转向角
     walls = [];
     wallHistory = [];
     redoHistory = [];
-    // update(); // 移除：不应在此处直接调用update，gameLoop会处理
 }
 
 function randomWalls() {
@@ -325,13 +327,9 @@ function randomCar() {
 }
 
 function isPointInCar(px, py) {
-    // (car.x, car.y) is the rear axle. Find the geometric center.
-    const centerX = car.x + (car.wheelbase / 2) * Math.sin(car.angle);
-    const centerY = car.y - (car.wheelbase / 2) * Math.cos(car.angle);
-
     // 将点击坐标转换到以汽车中心为原点的坐标系
-    const dx = px - centerX;
-    const dy = py - centerY;
+    const dx = px - car.x;
+    const dy = py - car.y;
 
     // 旋转坐标
     const rotatedX = dx * Math.cos(-car.angle) - dy * Math.sin(-car.angle);
@@ -342,8 +340,7 @@ function isPointInCar(px, py) {
 }
 
 function handleCanvasClick(e) {
-    // 移除了点击车辆掉头的逻辑，因为它与新的转向模型冲突
-
+    console.log("Canvas clicked at:", e.offsetX, e.offsetY," car  的",car.x,car.y);
     if (drawing) {
         if (!startPoint) {
             startPoint = { x: e.offsetX, y: e.offsetY };
@@ -353,7 +350,6 @@ function handleCanvasClick(e) {
             wallHistory.push(newWall);
             redoHistory = []; // 清空重做历史
             startPoint = null;
-            // update(); // 移除：不应在此处直接调用update，gameLoop会处理
         }
     } else if (drawingRect) { // 新增：处理矩形绘制
         if (!startPoint) {
@@ -381,15 +377,11 @@ function handleCanvasClick(e) {
         // 点击汽车时反转方向
         car.angle += Math.PI;
     } else if (settingCar) {
-        // 用户点击设置的是车辆中心点
-        const centerX = e.offsetX;
-        const centerY = e.offsetY;
-        // 根据中心点和当前角度计算后轴位置
-        car.x = centerX - (car.wheelbase / 2) * Math.sin(car.angle);
-        car.y = centerY + (car.wheelbase / 2) * Math.cos(car.angle);
+        car.x = e.offsetX;
+        car.y = e.offsetY;
+        car.angle = 0;
         settingCar = false;
         canvas.style.cursor = 'default';
-        // update(); // 移除：不应在此处直接调用update，gameLoop会处理
     }
 }
 
@@ -440,7 +432,7 @@ document.getElementById('redo-wall-btn').addEventListener('click', () => {
 
 document.getElementById('speed-slider').addEventListener('input', (e) => {
     // 滑块范围1-5
-    maxSpeed = parseFloat(e.target.value) * 10;
+    maxSpeed = parseFloat(e.target.value) * maxSpeed;
 });
 
 document.getElementById('random-walls-btn').addEventListener('click', randomWalls);
@@ -460,8 +452,12 @@ document.getElementById('restart-btn').addEventListener('click', restart);
 canvas.addEventListener('mousemove', handleMouseMove);
 canvas.addEventListener('click', handleCanvasClick);
 
-document.addEventListener('keydown', (e) => {
+window.addEventListener('keydown', (e) => {
     if (e.key in keys) {
+        // 阻止上下箭头键的默认滚动行为
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+        }
         keys[e.key] = true;
     }
 });
@@ -473,7 +469,20 @@ document.addEventListener('keyup', (e) => {
 });
 
 // --- 存档/读档功能 ---
-function saveState(slot) {
+function saveState(slot, force = false) {
+    const saveData = localStorage.getItem(`parking_lot_save_${slot}`);
+    if (saveData && !force) {
+        if (confirm(`存档 ${slot} 已有内容，是否覆盖？`)) {
+            // 用户确认覆盖
+            saveState(slot, true); // 强制保存
+        } else {
+            // 用户取消
+            messageBox.textContent = `取消覆盖存档 ${slot}。`;
+            messageBox.style.borderColor = 'orange';
+        }
+        return; // 提前返回，避免重复保存
+    }
+
     const gameState = {
         car: car,
         walls: walls,
@@ -504,7 +513,7 @@ function loadState(slot) {
 document.querySelectorAll('.save-btn').forEach(button => {
     button.addEventListener('click', (e) => {
         const slot = e.target.dataset.slot;
-        saveState(slot);
+        saveState(slot); // 调用新的保存逻辑
     });
 });
 
@@ -513,9 +522,72 @@ document.querySelectorAll('.load-btn').forEach(button => {
         const slot = e.target.dataset.slot;
         loadState(slot);
     });
+
+    // 添加鼠标悬停预览功能
+    button.addEventListener('mouseover', async (e) => {
+        const slot = e.target.dataset.slot;
+        const savedState = localStorage.getItem(`parking_lot_save_${slot}`);
+        if (!savedState) return;
+
+        const previewContainer = document.getElementById('preview-container');
+        const previewCanvas = document.createElement('canvas');
+        previewCanvas.width = 200; // 预览图宽度
+        previewCanvas.height = 200; // 预览图高度
+        const previewCtx = previewCanvas.getContext('2d');
+
+        // 清除预览容器
+        previewContainer.innerHTML = '';
+        previewContainer.appendChild(previewCanvas);
+
+        // 缩放比例（原画布800x800，预览200x200）
+        const scale = 0.25;
+        previewCtx.scale(scale, scale);
+
+        // 绘制保存的游戏状态
+        const gameState = JSON.parse(savedState);
+        drawPreviewState(previewCtx, gameState, scale);
+
+        // 定位预览容器
+        const rect = e.target.getBoundingClientRect();
+        previewContainer.style.left = `${rect.right + 10}px`;
+        previewContainer.style.top = `${rect.top}px`;
+        previewContainer.style.display = 'block';
+    });
+
+    button.addEventListener('mouseout', () => {
+        const previewContainer = document.getElementById('preview-container');
+        previewContainer.style.display = 'none';
+    });
 });
 
+// 绘制预览状态的辅助函数
+function drawPreviewState(ctx, gameState, scale) {
+    // 绘制背景
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, 800, 800);
 
-// 初始化
+    // 绘制墙壁
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 5 / scale; // 反缩放线宽
+    gameState.walls.forEach(wall => {
+        ctx.beginPath();
+        ctx.moveTo(wall.x1, wall.y1);
+        ctx.lineTo(wall.x2, wall.y2);
+        ctx.stroke();
+    });
+
+    // 绘制汽车
+    const car = gameState.car;
+    ctx.save();
+    ctx.translate(car.x, car.y);
+    ctx.rotate(car.angle);
+    ctx.fillStyle = 'blue';
+    ctx.fillRect(-carWidth/2, -carHeight/2, carWidth, carHeight);
+    ctx.restore();
+}
+
+
+// 初始化并读取存档1
 restart();
+loadState(1); 
 gameLoop(0); // 启动游戏循环

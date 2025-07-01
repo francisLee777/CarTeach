@@ -89,3 +89,16 @@ button:hover {
     border: 1px solid transparent;
     border-radius: 5px;
 }
+
+.preview-container {
+    position: fixed;
+    display: none;
+    border: 1px solid #ccc;
+    background-color: white;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.preview-container canvas {
+    display: block;
+}
